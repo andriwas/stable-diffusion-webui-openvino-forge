@@ -8,4 +8,4 @@ for how to run with openvino, read openvinotoolkit's webui fork readme [here](ht
 
 | feature | GPU | tested |
 | ------ | ------ | ------ | 
-| txt2img | Intel(R) Iris(R) Xe Graphics | yes |
+| txt2img | Intel(R) Iris(R) Xe Graphics (16Gb shared) | yes |
