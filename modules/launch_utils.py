@@ -425,6 +425,10 @@ def prepare_environment():
         run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
         startup_timer.record("install torch")
 
+    if os.environ.get("USE_OPENVINO") == "1":
+        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==2.1.0 torchvision==0.16.0")
+        requirements_file = os.environ.get('REQS_FILE', "requirements_openvino.txt")
+
     if args.use_ipex:
         args.skip_torch_cuda_test = True
     if not args.skip_torch_cuda_test and not check_run_python("import torch; assert torch.cuda.is_available()"):
