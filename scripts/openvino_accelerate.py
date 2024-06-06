@@ -17,7 +17,7 @@ import modules.scripts as scripts
 
 from modules import images, devices, extra_networks, masking, shared, sd_models_config, prompt_parser
 from modules.processing import (
-    StableDiffusionProcessing, Processed, apply_overlay, apply_color_correction,
+    StableDiffusionProcessing, Processed, apply_color_correction,
     get_fixed_seed, create_infotext, setup_color_correction
 )
 from modules.sd_models import CheckpointInfo, get_checkpoint_state_dict
@@ -1282,3 +1282,22 @@ class Script(scripts.Script):
             p.init = functools.partial(init_new, p)
             processed = process_images_openvino(p, model_config, vae_ckpt, p.sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
         return processed
+
+def apply_overlay(image, paste_loc, index, overlays):
+    if overlays is None or index >= len(overlays):
+        return image
+
+    overlay = overlays[index]
+
+    if paste_loc is not None:
+        x, y, w, h = paste_loc
+        base_image = Image.new('RGBA', (overlay.width, overlay.height))
+        image = images.resize_image(1, image, w, h)
+        base_image.paste(image, (x, y))
+        image = base_image
+
+    image = image.convert('RGBA')
+    image.alpha_composite(overlay)
+    image = image.convert('RGB')
+
+    return image
