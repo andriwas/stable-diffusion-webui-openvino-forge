@@ -34,6 +34,8 @@ from openvino.frontend.pytorch.fx_decoder import TorchFXPythonDecoder
 from openvino.frontend.pytorch.torchdynamo import backend # noqa: F401
 from openvino.frontend.pytorch.torchdynamo.partition import Partitioner
 from openvino.runtime import Core, Type, PartialShape, serialize
+import openvino.properties.hint as hints
+import openvino.properties as props
 
 from torch._dynamo.backends.common import fake_tensor_unsupported
 from torch._dynamo.backends.registry import register_backend
@@ -430,9 +432,12 @@ def openvino_compile_cached_model(cached_model_path, *example_inputs):
     om.validate_nodes_and_infer_types()
 
     core.set_property({'CACHE_DIR': cache_root_path() + '/blob'})
-
-    compiled_model = core.compile_model(om, get_device())
-
+    config = {hints.performance_mode: hints.PerformanceMode.THROUGHPUT}#, hints.num_requests: "4"}
+    print("BBBBBBBBBBBBBBBBB")
+    compiled_model = core.compile_model(om, get_device(), config)
+    print("BBBBBBBBBBBBBBBBC")
+    # num_requests = compiled_model.get_property(props.optimal_number_of_infer_requests)
+    # print("num_requests", num_requests)
     return compiled_model
 
 def openvino_compile(gm: GraphModule, *args, model_hash_str: str = None, file_name=""):
@@ -486,8 +491,12 @@ def openvino_compile(gm: GraphModule, *args, model_hash_str: str = None, file_na
 
     if model_hash_str is not None:
         core.set_property({'CACHE_DIR': cache_root + '/blob'})
-
-    compiled = core.compile_model(om, device)
+    config = {hints.performance_mode: hints.PerformanceMode.THROUGHPUT}#, hints.num_requests: "5"}
+    print("AAAAAAAAAAAAAAAAAB")
+    compiled = core.compile_model(om, device, config)
+    print("AAAAAAAAAAAAAAAAAC")
+    # num_requests = compiled.get_property(props.optimal_number_of_infer_requests)
+    # print("num_requests", num_requests)
     return compiled
 
 
@@ -511,6 +520,8 @@ shared.sd_refiner_model = None
 def set_scheduler(sd_model, sampler_name):
     if (sampler_name == "Euler a"):
         sd_model.scheduler = EulerAncestralDiscreteScheduler.from_config(sd_model.scheduler.config)
+    elif (sampler_name == "Euler a Karras"):
+        sd_model.scheduler = EulerAncestralDiscreteScheduler.from_config(sd_model.scheduler.config, use_karras_sigmas=True)
     elif (sampler_name == "Euler"):
         sd_model.scheduler = EulerDiscreteScheduler.from_config(sd_model.scheduler.config)
     elif (sampler_name == "LMS"):
@@ -990,13 +1001,22 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
 
             # temp workaround to disable prompt weighting for SDXL
             if is_xl_ckpt is True :
+                from compel import Compel, ReturnedEmbeddingsType
+                
+                compel = Compel(tokenizer=[shared.sd_diffusers_model.tokenizer, shared.sd_diffusers_model.tokenizer_2], text_encoder=[shared.sd_diffusers_model.text_encoder, shared.sd_diffusers_model.text_encoder_2], returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED, requires_pooled=[False, True], truncate_long_prompts=False)
+                #print("p.prompts", p.prompts)
+                #print("p.negative_prompts", p.negative_prompts)
+                conditioning, pooled = compel([p.prompts[0], p.negative_prompts[0]])
+                
                 custom_inputs.update(
                     {
-                    'prompt': p.prompts,
-                    'negative_prompt': p.negative_prompts
-                }
+                        'prompt_embeds' : conditioning[0:1],
+                        'pooled_prompt_embeds' : pooled[0:1],
+                        'negative_prompt_embeds' : conditioning[1:2],
+                        'negative_pooled_prompt_embeds' : pooled[1:2]
+                    }
                 )
-            else:
+            else:   
                 custom_inputs.update(
                     {
                         'prompt_embeds' : prompt_embeds,
@@ -1217,7 +1237,7 @@ class Script(scripts.Script):
                 refiner_frac = gr.Slider(minimum=0, maximum=1, step=0.1, label='Refiner Denosing Fraction:', value=0.8)
 
         override_sampler = gr.Checkbox(label="Override the sampling selection from the main UI (Recommended as only below sampling methods have been validated for OpenVINO)", value=True)
-        sampler_name = gr.Radio(label="Select a sampling method", choices=["Euler a", "Euler", "LMS", "Heun", "DPM++ 2M", "LMS Karras", "DPM++ SDE Karras", "DPM++ SDE SGM_Uniform", "DPM++ SDE Sample SGM_Uniform", "DPM++ 2M Karras", "DPM++ 2M SDE Karras", "DDIM", "PLMS"], value="Euler a")
+        sampler_name = gr.Radio(label="Select a sampling method", choices=["Euler a", "Euler a Karras", "Euler", "LMS", "Heun", "DPM++ 2M", "LMS Karras", "DPM++ SDE Karras", "DPM++ SDE SGM_Uniform", "DPM++ SDE Sample SGM_Uniform", "DPM++ 2M Karras", "DPM++ 2M SDE Karras", "DDIM", "PLMS"], value="Euler a")
         enable_caching = gr.Checkbox(label="Cache the compiled models on disk for faster model load in subsequent launches (Recommended)", value=True, elem_id=self.elem_id("enable_caching"))
         override_hires = gr.Checkbox(label="Override the Hires.fix selection from the main UI (Recommended as only below upscalers have been validated for OpenVINO)", value=False, visible=self.is_txt2img)
         with gr.Group(visible=False) as hires:
@@ -1274,7 +1294,7 @@ class Script(scripts.Script):
         if override_sampler:
             p.sampler_name = sampler_name
         else:
-            supported_samplers = ["Euler a", "Euler", "LMS", "Heun", "DPM++ 2M", "LMS Karras", "DPM++ SDE Karras", "DPM++ SDE SGM_Uniform", "DPM++ SDE Sample SGM_Uniform", "DPM++ 2M Karras", "DPM++ 2M SDE Karras", "DDIM", "PLMS"]
+            supported_samplers = ["Euler a", "Euler a Karras", "Euler", "LMS", "Heun", "DPM++ 2M", "LMS Karras", "DPM++ SDE Karras", "DPM++ SDE SGM_Uniform", "DPM++ SDE Sample SGM_Uniform", "DPM++ 2M Karras", "DPM++ 2M SDE Karras", "DDIM", "PLMS"]
             if (p.sampler_name not in supported_samplers):
                 p.sampler_name = "Euler a"
 
