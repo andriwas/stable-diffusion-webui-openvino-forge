@@ -79,7 +79,7 @@ def check_if_dynamo_supported():
         raise RuntimeError("Python 3.12+ not yet supported for torch.compile")
 
 torch._dynamo.eval_frame.check_if_dynamo_supported = check_if_dynamo_supported
-
+from compel import Compel, ReturnedEmbeddingsType
 
 
 
@@ -1001,13 +1001,8 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
 
             # temp workaround to disable prompt weighting for SDXL
             if is_xl_ckpt is True :
-                from compel import Compel, ReturnedEmbeddingsType
-                
                 compel = Compel(tokenizer=[shared.sd_diffusers_model.tokenizer, shared.sd_diffusers_model.tokenizer_2], text_encoder=[shared.sd_diffusers_model.text_encoder, shared.sd_diffusers_model.text_encoder_2], returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED, requires_pooled=[False, True], truncate_long_prompts=False)
-                #print("p.prompts", p.prompts)
-                #print("p.negative_prompts", p.negative_prompts)
                 conditioning, pooled = compel([p.prompts[0], p.negative_prompts[0]])
-                
                 custom_inputs.update(
                     {
                         'prompt_embeds' : conditioning[0:1],
@@ -1016,11 +1011,16 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
                         'negative_pooled_prompt_embeds' : pooled[1:2]
                     }
                 )
-            else:   
+            else:
+                from compel import Compel, ReturnedEmbeddingsType
+                compel = Compel(tokenizer=shared.sd_diffusers_model.tokenizer, text_encoder=shared.sd_diffusers_model.text_encoder)
+                conditioning = compel(p.prompts[0])
+                negative_conditioning = compel(p.negative_prompts[0])
+                [conditioning, negative_conditioning] = compel.pad_conditioning_tensors_to_same_length([conditioning, negative_conditioning])
                 custom_inputs.update(
                     {
-                        'prompt_embeds' : prompt_embeds,
-                        'negative_prompt_embeds' : negative_prompt_embeds
+                        'prompt_embeds' : conditioning,
+                        'negative_prompt_embeds' : negative_conditioning,
                     }
                 )
 
